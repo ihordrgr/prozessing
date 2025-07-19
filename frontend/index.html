@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VIP Клуб Доступа - Эксклюзивные материалы</title>
+    <meta name="description" content="VIP доступ к эксклюзивным материалам и закрытому разделу. Получите премиум-контент и особые привилегии.">
+    <meta name="keywords" content="VIP доступ, эксклюзивный контент, премиум материалы, закрытый раздел">
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://vip-club.example.com/">
+    <meta property="og:title" content="VIP Клуб Доступа">
+    <meta property="og:description" content="Получите эксклюзивный доступ к закрытому разделу с премиум-контентом">
+    <meta property="og:image" content="/og-image.jpg">
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:url" content="https://vip-club.example.com/">
+    <meta property="twitter:title" content="VIP Клуб Доступа">
+    <meta property="twitter:description" content="Получите эксклюзивный доступ к закрытому разделу с премиум-контентом">
+    <meta property="twitter:image" content="/og-image.jpg">
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0c0c0c 0%, #1a1a1a 50%, #0c0c0c 100%);
+            color: #ffffff;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Background Effects */
+        .bg-effects {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .bg-gradient-1 {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(ellipse at top, rgba(16, 185, 129, 0.1) 0%, transparent 50%);
+        }
+
+        .bg-gradient-2 {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(ellipse at bottom right, rgba(251, 191, 36, 0.05) 0%, transparent 50%);
+        }
+
+        /* Main Container */
+        .container {
+            position: relative;
+            z-index: 10;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* Header Section */
+        .header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+
+        .crown-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        .main-title {
+            font-size: clamp(2.5rem, 5vw, 4rem);
+            font-weight: 900;
+            margin-bottom: 1rem;
+            background: linear-gradient(45deg, #fbbf24, #10b981, #fbbf24);
+            background-size: 200% 200%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: gradient 3s ease infinite;
+        }
+
+        @keyframes gradient {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+
+        .subtitle {
+            font-size: clamp(1.2rem, 3vw, 1.8rem);
+            color: #d1d5db;
+            margin-bottom: 1rem;
+            font-weight: 600;
+        }
+
+        .description {
+            font-size: clamp(1rem, 2vw, 1.2rem);
+            color: #9ca3af;
+            max-width: 600px;
+            line-height: 1.6;
+        }
+
+        /* Features Grid */
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-bottom: 3rem;
+            width: 100%;
+            max-width: 1000px;
+        }
+
+        .feature-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 1rem;
+            padding: 2rem;
+            text-align: center;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .feature-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+            transition: left 0.5s ease;
+        }
+
+        .feature-card:hover::before {
+            left: 100%;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+            border-color: rgba(16, 185, 129, 0.5);
+            box-shadow: 0 20px 40px rgba(16, 185, 129, 0.1);
+        }
+
+        .feature-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            transition: transform 0.3s ease;
+        }
+
+        .feature-card:hover .feature-icon {
+            transform: scale(1.1);
+        }
+
+        .feature-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            color: #ffffff;
+        }
+
+        .feature-description {
+            color: #9ca3af;
+            line-height: 1.5;
+        }
+
+        /* Main CTA Section */
+        .cta-section {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%);
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 2rem;
+            padding: 3rem;
+            text-align: center;
+            margin-bottom: 2rem;
+            max-width: 600px;
+            width: 100%;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.3);
+        }
+
+        .limited-offer {
+            display: inline-block;
+            background: linear-gradient(45deg, #10b981, #fbbf24);
+            color: #000;
+            padding: 0.5rem 1rem;
+            border-radius: 2rem;
+            font-size: 0.9rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 1.5rem;
+        }
+
+        .cta-title {
+            font-size: clamp(1.5rem, 4vw, 2rem);
+            font-weight: 700;
+            margin-bottom: 1rem;
+            color: #ffffff;
+        }
+
+        .cta-subtitle {
+            font-size: clamp(1.2rem, 3vw, 1.5rem);
+            color: #10b981;
+            margin-bottom: 2rem;
+            font-weight: 600;
+        }
+
+        /* Payment Button */
+        .pay-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            background: linear-gradient(45deg, #10b981, #059669);
+            color: #000;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: clamp(1rem, 2.5vw, 1.2rem);
+            padding: 1rem 2rem;
+            border-radius: 1rem;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+            width: 100%;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .pay-button::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left 0.5s ease;
+        }
+
+        .pay-button:hover::before {
+            left: 100%;
+        }
+
+        .pay-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 15px 30px rgba(16, 185, 129, 0.3);
+            background: linear-gradient(45deg, #059669, #047857);
+        }
+
+        .pay-button:active {
+            transform: translateY(0);
+        }
+
+        /* Instructions */
+        .instructions {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 1rem;
+            padding: 2rem;
+            max-width: 500px;
+            width: 100%;
+        }
+
+        .instructions-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #fbbf24;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+
+        .instructions-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .instructions-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            color: #d1d5db;
+        }
+
+        .step-number {
+            background: #10b981;
+            color: #000;
+            width: 1.5rem;
+            height: 1.5rem;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            font-weight: 700;
+            flex-shrink: 0;
+            margin-top: 0.125rem;
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            color: #6b7280;
+            font-size: 0.9rem;
+            margin-top: 3rem;
+        }
+
+        .footer p {
+            margin-bottom: 0.5rem;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .container {
+                padding: 1rem;
+            }
+
+            .features {
+                grid-template-columns: 1fr;
+                gap: 1.5rem;
+            }
+
+            .cta-section {
+                padding: 2rem;
+                margin-bottom: 1.5rem;
+            }
+
+            .instructions {
+                padding: 1.5rem;
+            }
+        }
+
+        /* Loading Animation */
+        .loading {
+            display: inline-block;
+            width: 1rem;
+            height: 1rem;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #ffffff;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <!-- Background Effects -->
+    <div class="bg-effects">
+        <div class="bg-gradient-1"></div>
+        <div class="bg-gradient-2"></div>
+    </div>
+
+    <!-- Main Container -->
+    <div class="container">
+        <!-- Header Section -->
+        <header class="header">
+            <div class="crown-icon">👑</div>
+            <h1 class="main-title">🔥 VIP ДОСТУП</h1>
+            <h2 class="subtitle">К ЧАСТНЫМ МАТЕРИАЛАМ</h2>
+            <p class="description">
+                Получите эксклюзивный доступ к закрытому разделу с премиум-контентом. 
+                Ограниченное количество мест для VIP-участников.
+            </p>
+        </header>
+
+        <!-- Features Section -->
+        <section class="features">
+            <div class="feature-card">
+                <div class="feature-icon">🛡️</div>
+                <h3 class="feature-title">Эксклюзивный контент</h3>
+                <p class="feature-description">Доступ к закрытым материалам и приватным чатам</p>
+            </div>
+            
+            <div class="feature-card">
+                <div class="feature-icon">⭐</div>
+                <h3 class="feature-title">VIP статус</h3>
+                <p class="feature-description">Особые привилегии и первоочередной доступ</p>
+            </div>
+            
+            <div class="feature-card">
+                <div class="feature-icon">⚡</div>
+                <h3 class="feature-title">Мгновенная активация</h3>
+                <p class="feature-description">Доступ предоставляется сразу после оплаты</p>
+            </div>
+        </section>
+
+        <!-- Main CTA Section -->
+        <section class="cta-section">
+            <div class="limited-offer">Ограниченное предложение</div>
+            <h3 class="cta-title">Оплата необходима для получения</h3>
+            <h4 class="cta-subtitle">личного доступа к закрытому разделу</h4>
+            
+            <a href="https://t.me/CryptoVisaBot" target="_blank" rel="noopener noreferrer" class="pay-button">
+                <span>💳</span>
+                Оплатить доступ
+                <span>→</span>
+            </a>
+        </section>
+
+        <!-- Instructions -->
+        <section class="instructions">
+            <h5 class="instructions-title">Инструкция:</h5>
+            <ol class="instructions-list">
+                <li class="instructions-item">
+                    <span class="step-number">1</span>
+                    <span>Нажмите кнопку "Оплатить доступ"</span>
+                </li>
+                <li class="instructions-item">
+                    <span class="step-number">2</span>
+                    <span>Следуйте инструкциям в Telegram боте</span>
+                </li>
+                <li class="instructions-item">
+                    <span class="step-number">3</span>
+                    <span>Отправьте скриншот оплаты в бот</span>
+                </li>
+                <li class="instructions-item">
+                    <span class="step-number">4</span>
+                    <span>Получите мгновенный доступ к VIP разделу</span>
+                </li>
+            </ol>
+        </section>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>© 2025 VIP Клуб Доступа. Все права защищены.</p>
+            <p>Безопасная оплата через проверенные сервисы</p>
+        </footer>
+    </div>
+
+    <script>
+        // Add smooth scrolling and interactive effects
+        document.addEventListener('DOMContentLoaded', function() {
+            // Add click tracking for analytics
+            const payButton = document.querySelector('.pay-button');
+            if (payButton) {
+                payButton.addEventListener('click', function() {
+                    // Track button click
+                    console.log('Payment button clicked');
+                    
+                    // Optional: Add loading state
+                    const originalText = this.innerHTML;
+                    this.innerHTML = '<span class="loading"></span> Переход к оплате...';
+                    
+                    setTimeout(() => {
+                        this.innerHTML = originalText;
+                    }, 2000);
+                });
+            }
+
+            // Add parallax effect to background
+            window.addEventListener('scroll', function() {
+                const scrolled = window.pageYOffset;
+                const parallax = document.querySelector('.bg-effects');
+                if (parallax) {
+                    parallax.style.transform = `translateY(${scrolled * 0.5}px)`;
+                }
+            });
+
+            // Add intersection observer for animations
+            const observerOptions = {
+                threshold: 0.1,
+                rootMargin: '0px 0px -50px 0px'
+            };
+
+            const observer = new IntersectionObserver(function(entries) {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        entry.target.style.opacity = '1';
+                        entry.target.style.transform = 'translateY(0)';
+                    }
+                });
+            }, observerOptions);
+
+            // Observe feature cards
+            document.querySelectorAll('.feature-card').forEach(card => {
+                card.style.opacity = '0';
+                card.style.transform = 'translateY(20px)';
+                card.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+                observer.observe(card);
+            });
+        });
+    </script>
+</body>
+</html>
