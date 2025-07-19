@@ -1,22 +1,104 @@
-import React, { useState } from 'react'
-import { Book, Download, ExternalLink, Search, FileText, Video, Code } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { Book, Download, ExternalLink, Search, FileText, Video, Code, Eye, Globe } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import { Helmet } from 'react-helmet-async'
+import html2pdf from 'html2pdf.js'
 
 interface DocumentationProps {
   telegramId?: number
 }
 
+interface SearchHistoryItem {
+  term: string
+  timestamp: number
+}
+
+const translations = {
+  ru: {
+    documentation: 'Документация',
+    downloadPDF: 'Скачать PDF',
+    search: 'Поиск в документации...',
+    searchResults: 'Результаты поиска для',
+    nothingFound: 'Ничего не найдено',
+    readMore: 'Читать полностью →',
+    usefulLinks: 'Полезные ссылки',
+    telegramSupport: 'Поддержка в Telegram',
+    emailSupport: 'Email поддержка',
+    systemStatus: 'Статус системы',
+    searchHistory: 'История поиска',
+    clearHistory: 'Очистить',
+    gettingStarted: 'Начало работы',
+    payment: 'Оплата и доступ',
+    api: 'API и интеграции',
+    troubleshooting: 'Решение проблем'
+  },
+  en: {
+    documentation: 'Documentation',
+    downloadPDF: 'Download PDF',
+    search: 'Search documentation...',
+    searchResults: 'Search results for',
+    nothingFound: 'Nothing found',
+    readMore: 'Read more →',
+    usefulLinks: 'Useful links',
+    telegramSupport: 'Telegram Support',
+    emailSupport: 'Email Support',
+    systemStatus: 'System Status',
+    searchHistory: 'Search History',
+    clearHistory: 'Clear',
+    gettingStarted: 'Getting Started',
+    payment: 'Payment & Access',
+    api: 'API & Integrations',
+    troubleshooting: 'Troubleshooting'
+  }
+}
+
 export const DocumentationSystem: React.FC<DocumentationProps> = ({ telegramId }) => {
   const [activeSection, setActiveSection] = useState<'getting-started' | 'payment' | 'api' | 'troubleshooting'>('getting-started')
   const [searchTerm, setSearchTerm] = useState('')
+  const [searchHistory, setSearchHistory] = useState<SearchHistoryItem[]>([])
+  const [language, setLanguage] = useState<'ru' | 'en'>('ru')
+  const [isLoading, setIsLoading] = useState(false)
+  const [hoveredSection, setHoveredSection] = useState<string | null>(null)
+
+  const t = translations[language]
+
+  // Load search history from localStorage
+  useEffect(() => {
+    const savedHistory = localStorage.getItem('documentation-search-history')
+    if (savedHistory) {
+      setSearchHistory(JSON.parse(savedHistory))
+    }
+  }, [])
+
+  // Save search to history
+  const saveSearchToHistory = (term: string) => {
+    if (term.trim().length < 2) return
+    
+    const newHistory = [
+      { term: term.trim(), timestamp: Date.now() },
+      ...searchHistory.filter(item => item.term !== term.trim())
+    ].slice(0, 5) // Keep only last 5 searches
+    
+    setSearchHistory(newHistory)
+    localStorage.setItem('documentation-search-history', JSON.stringify(newHistory))
+  }
+
+  // Clear search history
+  const clearSearchHistory = () => {
+    setSearchHistory([])
+    localStorage.removeItem('documentation-search-history')
+  }
 
   const documentationSections = {
     'getting-started': {
-      title: 'Начало работы',
+      title: language === 'ru' ? 'Начало работы' : 'Getting Started',
       icon: <Book className="w-5 h-5" />,
+      preview: language === 'ru' ? 'Регистрация, первые шаги, интерфейс' : 'Registration, first steps, interface',
       content: [
         {
-          title: 'Регистрация и первые шаги',
-          content: `
+          title: language === 'ru' ? 'Регистрация и первые шаги' : 'Registration and First Steps',
+          content: language === 'ru' ? `
 # Добро пожаловать в VIP Клуб!
 
 ## Как начать работу
@@ -37,11 +119,32 @@ export const DocumentationSystem: React.FC<DocumentationProps> = ({ telegramId }
 ## Срок действия
 
 VIP доступ действует **30 дней** с момента подтверждения оплаты.
+          ` : `
+# Welcome to VIP Club!
+
+## How to get started
+
+1. **Launch the bot** - Click /start in Telegram bot
+2. **Explore features** - Get familiar with available functions
+3. **Make payment** - To get VIP access
+4. **Get access** - After payment confirmation
+
+## What VIP access includes
+
+- 🔒 Access to private materials
+- 💬 Participation in private chats
+- ⚡ Priority support
+- 📊 Advanced analytics
+- 🎯 Exclusive content
+
+## Validity period
+
+VIP access is valid for **30 days** from payment confirmation.
           `
         },
         {
-          title: 'Интерфейс и навигация',
-          content: `
+          title: language === 'ru' ? 'Интерфейс и навигация' : 'Interface and Navigation',
+          content: language === 'ru' ? `
 # Интерфейс системы
 
 ## Основные разделы
@@ -69,17 +172,46 @@ VIP доступ действует **30 дней** с момента подтв
 ## Навигация
 
 Используйте кнопки в правом верхнем углу для быстрого доступа к разделам.
+          ` : `
+# System Interface
+
+## Main sections
+
+### 🏠 Home page
+- VIP access information
+- Payment button
+- Instructions
+
+### ⚙️ Personal cabinet
+- VIP access status
+- Payment history
+- Access links
+
+### 🛡️ Security
+- Activity log
+- Security settings
+- Session monitoring
+
+### 📞 Support
+- Create tickets
+- FAQ
+- Contacts
+
+## Navigation
+
+Use buttons in the top right corner for quick access to sections.
           `
         }
       ]
     },
     'payment': {
-      title: 'Оплата и доступ',
+      title: language === 'ru' ? 'Оплата и доступ' : 'Payment & Access',
       icon: <FileText className="w-5 h-5" />,
+      preview: language === 'ru' ? 'Способы оплаты, решение проблем' : 'Payment methods, troubleshooting',
       content: [
         {
-          title: 'Процесс оплаты',
-          content: `
+          title: language === 'ru' ? 'Процесс оплаты' : 'Payment Process',
+          content: language === 'ru' ? `
 # Как произвести оплату
 
 ## Шаг 1: Инициация платежа
@@ -117,77 +249,77 @@ VIP доступ действует **30 дней** с момента подтв
 ## Стоимость
 
 **500 рублей** за 30 дней VIP доступа
-          `
-        },
-        {
-          title: 'Решение проблем с оплатой',
-          content: `
-# Проблемы с оплатой
+          ` : `
+# How to make payment
 
-## Платеж не прошел
+## Step 1: Payment initiation
+1. Click "Pay for access" button
+2. Choose convenient payment method
+3. Follow payment system instructions
 
-### Возможные причины:
-- Недостаточно средств на карте
-- Карта заблокирована банком
-- Технические проблемы платежной системы
-- Неверные данные карты
+## Step 2: Confirmation
+1. Take screenshot of successful payment
+2. Send screenshot to bot
+3. Wait for confirmation (up to 5 minutes)
 
-### Что делать:
-1. Проверьте баланс карты
-2. Обратитесь в банк
-3. Попробуйте другой способ оплаты
-4. Обратитесь в поддержку
+## Payment methods
 
-## Платеж прошел, но доступ не предоставлен
+### 💳 Bank cards
+- Visa, MasterCard, МИР
+- Instant crediting
+- 0% commission
 
-### Проверьте:
-1. Отправили ли вы скриншот в бот
-2. Прошло ли достаточно времени (до 5 минут)
-3. Корректность скриншота
+### 🏦 SBP (Fast Payment System)
+- Transfers by phone number
+- No commission
+- Instant crediting
 
-### Если проблема не решена:
-1. Обратитесь в поддержку
-2. Приложите скриншот оплаты
-3. Укажите время и сумму платежа
+### ₿ Cryptocurrency
+- Bitcoin, Ethereum, USDT
+- Anonymity
+- Confirmation up to 30 minutes
 
-## Возврат средств
+### 💰 Electronic wallets
+- QIWI, YooMoney, WebMoney
+- Fast transfers
+- Minimal commission
 
-Возврат возможен в течение **24 часов** при наличии веских оснований:
-- Технические проблемы системы
-- Двойное списание
-- Ошибочный платеж
+## Cost
+
+**500 rubles** for 30 days VIP access
           `
         }
       ]
     },
     'api': {
-      title: 'API и интеграции',
+      title: language === 'ru' ? 'API и интеграции' : 'API & Integrations',
       icon: <Code className="w-5 h-5" />,
+      preview: language === 'ru' ? 'API документация, webhook интеграция' : 'API documentation, webhook integration',
       content: [
         {
-          title: 'API документация',
+          title: language === 'ru' ? 'API документация' : 'API Documentation',
           content: `
-# API для разработчиков
+# API ${language === 'ru' ? 'для разработчиков' : 'for developers'}
 
-## Базовый URL
+## ${language === 'ru' ? 'Базовый URL' : 'Base URL'}
 \`\`\`
 https://api.vip-club.com/v1
 \`\`\`
 
-## Аутентификация
-Используйте API ключ в заголовке:
+## ${language === 'ru' ? 'Аутентификация' : 'Authentication'}
+${language === 'ru' ? 'Используйте API ключ в заголовке:' : 'Use API key in header:'}
 \`\`\`
 Authorization: Bearer YOUR_API_KEY
 \`\`\`
 
-## Основные эндпоинты
+## ${language === 'ru' ? 'Основные эндпоинты' : 'Main endpoints'}
 
-### Проверка статуса пользователя
+### ${language === 'ru' ? 'Проверка статуса пользователя' : 'Check user status'}
 \`\`\`http
 GET /users/{telegram_id}/status
 \`\`\`
 
-**Ответ:**
+**${language === 'ru' ? 'Ответ:' : 'Response:'}**
 \`\`\`json
 {
   "telegram_id": 123456789,
@@ -197,12 +329,12 @@ GET /users/{telegram_id}/status
 }
 \`\`\`
 
-### Создание платежа
+### ${language === 'ru' ? 'Создание платежа' : 'Create payment'}
 \`\`\`http
 POST /payments
 \`\`\`
 
-**Тело запроса:**
+**${language === 'ru' ? 'Тело запроса:' : 'Request body:'}**
 \`\`\`json
 {
   "telegram_id": 123456789,
@@ -211,94 +343,18 @@ POST /payments
   "payment_method": "card"
 }
 \`\`\`
-
-### Webhook уведомления
-Настройте webhook URL для получения уведомлений о платежах:
-\`\`\`http
-POST /webhooks/configure
-\`\`\`
-
-## Коды ошибок
-
-- \`400\` - Неверный запрос
-- \`401\` - Неавторизован
-- \`403\` - Доступ запрещен
-- \`404\` - Не найдено
-- \`429\` - Превышен лимит запросов
-- \`500\` - Внутренняя ошибка сервера
-          `
-        },
-        {
-          title: 'Webhook интеграция',
-          content: `
-# Настройка Webhook
-
-## Что такое Webhook
-
-Webhook - это HTTP callback, который отправляется на ваш сервер при определенных событиях в системе.
-
-## Поддерживаемые события
-
-### payment.completed
-Платеж успешно завершен
-\`\`\`json
-{
-  "event": "payment.completed",
-  "data": {
-    "payment_id": "pay_123",
-    "telegram_id": 123456789,
-    "amount": 500,
-    "currency": "RUB",
-    "timestamp": "2025-01-18T10:30:00Z"
-  }
-}
-\`\`\`
-
-### access.granted
-VIP доступ предоставлен
-\`\`\`json
-{
-  "event": "access.granted",
-  "data": {
-    "telegram_id": 123456789,
-    "access_level": "premium",
-    "expires_at": "2025-02-18T10:30:00Z",
-    "access_link": "https://t.me/joinchat/VIP_ABC123"
-  }
-}
-\`\`\`
-
-### access.expired
-VIP доступ истек
-\`\`\`json
-{
-  "event": "access.expired",
-  "data": {
-    "telegram_id": 123456789,
-    "expired_at": "2025-01-18T10:30:00Z"
-  }
-}
-\`\`\`
-
-## Безопасность
-
-Все webhook запросы подписываются HMAC-SHA256:
-\`\`\`
-X-Signature: sha256=abc123...
-\`\`\`
-
-Проверяйте подпись для обеспечения безопасности.
           `
         }
       ]
     },
     'troubleshooting': {
-      title: 'Решение проблем',
+      title: language === 'ru' ? 'Решение проблем' : 'Troubleshooting',
       icon: <Video className="w-5 h-5" />,
+      preview: language === 'ru' ? 'Частые проблемы, контакты поддержки' : 'Common issues, support contacts',
       content: [
         {
-          title: 'Частые проблемы',
-          content: `
+          title: language === 'ru' ? 'Частые проблемы' : 'Common Issues',
+          content: language === 'ru' ? `
 # Решение частых проблем
 
 ## Проблемы с доступом
@@ -324,99 +380,32 @@ X-Signature: sha256=abc123...
 1. Подождите 5-10 минут
 2. Перезапустите бота командой /start
 3. Проверьте интернет соединение
+          ` : `
+# Solving common problems
 
-## Проблемы с платежами
+## Access issues
 
-### Деньги списались, но доступ не предоставлен
-**Что делать:**
-1. Проверьте email с подтверждением
-2. Отправьте скриншот в бот
-3. Подождите до 30 минут
-4. Обратитесь в поддержку с чеком
+### Can't enter VIP chat
+**Possible causes:**
+- VIP access expired
+- Link is invalid
+- Telegram technical issues
 
-### Ошибка при оплате
-**Частые причины:**
-- Недостаточно средств
-- Карта заблокирована
-- Неверные данные
+**Solution:**
+1. Check VIP status in personal cabinet
+2. Request new link through bot
+3. Contact support
 
-**Решение:**
-1. Проверьте баланс карты
-2. Убедитесь в правильности данных
-3. Попробуйте другую карту
-4. Обратитесь в банк
+### Bot doesn't respond
+**Possible causes:**
+- Technical maintenance
+- High load
+- Internet problems
 
-## Технические проблемы
-
-### Сайт не загружается
-1. Очистите кеш браузера
-2. Попробуйте другой браузер
-3. Проверьте интернет соединение
-4. Используйте VPN если доступ ограничен
-
-### Ошибки в личном кабинете
-1. Обновите страницу
-2. Выйдите и войдите заново
-3. Очистите cookies
-4. Обратитесь в поддержку
-          `
-        },
-        {
-          title: 'Контакты поддержки',
-          content: `
-# Как связаться с поддержкой
-
-## Способы связи
-
-### 🤖 Telegram бот
-- **@support_bot** - основной канал поддержки
-- Ответ в течение 2 часов
-- Доступен 24/7
-
-### 📧 Email
-- **support@vip-club.com**
-- Ответ в течение 4 часов
-- Для сложных вопросов
-
-### 📞 Телефон
-- **+7 (999) 123-45-67**
-- Рабочие дни: 9:00 - 18:00 МСК
-- Экстренные случаи
-
-### 💬 Онлайн чат
-- Доступен на сайте
-- Рабочие дни: 9:00 - 21:00 МСК
-- Мгновенные ответы
-
-## Что указать в обращении
-
-### Для проблем с оплатой:
-- Сумма и время платежа
-- Способ оплаты
-- Скриншот чека
-- Ваш Telegram ID
-
-### Для технических проблем:
-- Описание проблемы
-- Шаги для воспроизведения
-- Скриншоты ошибок
-- Браузер и устройство
-
-### Для вопросов по доступу:
-- Ваш Telegram ID
-- Дата покупки VIP
-- Описание проблемы
-
-## Время ответа
-
-- **Критические проблемы**: до 30 минут
-- **Проблемы с оплатой**: до 2 часов
-- **Общие вопросы**: до 4 часов
-- **Предложения**: до 24 часов
-
-## Статус системы
-
-Проверить статус всех сервисов: **status.vip-club.com**
+**Solution:**
+1. Wait 5-10 minutes
+2. Restart bot with /start command
+3. Check internet connection
           `
         }
       ]
@@ -436,154 +425,314 @@ X-Signature: sha256=abc123...
     return acc
   }, {} as typeof documentationSections)
 
-  const downloadPDF = () => {
-    // In a real app, generate and download PDF
-    alert('PDF документация будет загружена')
+  // Highlight search matches
+  const highlightText = (text: string, searchTerm: string) => {
+    if (!searchTerm) return text
+    
+    const regex = new RegExp(`(${searchTerm})`, 'gi')
+    return text.replace(regex, '<mark class="bg-yellow-400 text-black px-1 rounded">$1</mark>')
+  }
+
+  const downloadPDF = async () => {
+    setIsLoading(true)
+    try {
+      const element = document.getElementById('documentation-content')
+      if (!element) return
+
+      const opt = {
+        margin: 1,
+        filename: `documentation-${language}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+      }
+
+      await html2pdf().set(opt).from(element).save()
+    } catch (error) {
+      console.error('PDF generation failed:', error)
+      alert(language === 'ru' ? 'Ошибка при создании PDF' : 'PDF generation error')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleSearch = (term: string) => {
+    setSearchTerm(term)
+    if (term.trim()) {
+      saveSearchToHistory(term)
+    }
+  }
+
+  // Custom markdown components
+  const markdownComponents = {
+    code: ({ node, inline, className, children, ...props }: any) => {
+      const match = /language-(\w+)/.exec(className || '')
+      return !inline ? (
+        <pre className="bg-gray-800 rounded-lg p-4 overflow-x-auto my-4">
+          <code className={`text-sm ${className || ''} text-green-400`} {...props}>
+            {children}
+          </code>
+        </pre>
+      ) : (
+        <code className="bg-gray-700 px-2 py-1 rounded text-green-400 text-sm" {...props}>
+          {children}
+        </code>
+      )
+    },
+    pre: ({ children }: any) => (
+      <div className="bg-gray-800 rounded-lg p-4 overflow-x-auto my-4">
+        {children}
+      </div>
+    )
   }
 
   return (
-    <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-6 border border-white/10">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <h3 className="text-xl font-bold flex items-center gap-2">
-          <Book className="w-6 h-6" />
-          Документация
-        </h3>
-        <div className="flex items-center gap-4">
-          <button
-            onClick={downloadPDF}
-            className="bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 px-3 py-2 rounded-lg text-sm flex items-center gap-2"
-          >
-            <Download className="w-4 h-4" />
-            Скачать PDF
-          </button>
+    <>
+      <Helmet>
+        <title>{t.documentation} - VIP Club</title>
+        <meta name="description" content={language === 'ru' ? 'Полная документация по использованию VIP Club системы' : 'Complete documentation for VIP Club system usage'} />
+        <meta property="og:title" content={`${t.documentation} - VIP Club`} />
+        <meta property="og:description" content={language === 'ru' ? 'Полная документация по использованию VIP Club системы' : 'Complete documentation for VIP Club system usage'} />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      </Helmet>
+
+      <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-4 sm:p-6 border border-white/10">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
+          <h3 className="text-lg sm:text-xl font-bold flex items-center gap-2">
+            <Book className="w-5 h-5 sm:w-6 sm:h-6" />
+            {t.documentation}
+          </h3>
+          <div className="flex items-center gap-2 sm:gap-4">
+            <button
+              onClick={() => setLanguage(language === 'ru' ? 'en' : 'ru')}
+              className="bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-all duration-200"
+              title={language === 'ru' ? 'Switch to English' : 'Переключить на русский'}
+            >
+              <Globe className="w-4 h-4" />
+              {language === 'ru' ? 'EN' : 'RU'}
+            </button>
+            <button
+              onClick={downloadPDF}
+              disabled={isLoading}
+              className="bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 disabled:opacity-50 px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-all duration-200"
+            >
+              <Download className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+              {t.downloadPDF}
+            </button>
+          </div>
         </div>
-      </div>
 
-      {/* Search */}
-      <div className="relative mb-6">
-        <Search className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-        <input
-          type="text"
-          placeholder="Поиск в документации..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full bg-gray-700 border border-gray-600 rounded-lg pl-10 pr-4 py-2 text-white"
-        />
-      </div>
+        {/* Search */}
+        <div className="relative mb-4">
+          <Search className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder={t.search}
+            value={searchTerm}
+            onChange={(e) => handleSearch(e.target.value)}
+            className="w-full bg-gray-700 border border-gray-600 rounded-lg pl-10 pr-4 py-2 text-white text-sm sm:text-base transition-all duration-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+          />
+        </div>
 
-      <div className="flex flex-col lg:flex-row gap-6">
-        {/* Sidebar */}
-        <div className="lg:w-64 flex-shrink-0">
-          <nav className="space-y-2">
-            {Object.entries(documentationSections).map(([key, section]) => (
+        {/* Search History */}
+        {searchHistory.length > 0 && !searchTerm && (
+          <div className="mb-6 p-4 bg-gray-700/30 rounded-lg">
+            <div className="flex items-center justify-between mb-2">
+              <h5 className="text-sm font-medium text-gray-300">{t.searchHistory}</h5>
               <button
-                key={key}
-                onClick={() => setActiveSection(key as any)}
-                className={`w-full text-left p-3 rounded-lg transition-colors flex items-center gap-2 ${
-                  activeSection === key
-                    ? 'bg-emerald-500/20 text-emerald-400'
-                    : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
-                }`}
+                onClick={clearSearchHistory}
+                className="text-xs text-gray-400 hover:text-white transition-colors"
               >
-                {section.icon}
-                {section.title}
+                {t.clearHistory}
               </button>
-            ))}
-          </nav>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1">
-          {searchTerm ? (
-            /* Search Results */
-            <div>
-              <h4 className="text-lg font-semibold mb-4">
-                Результаты поиска для "{searchTerm}"
-              </h4>
-              {Object.keys(filteredContent).length === 0 ? (
-                <p className="text-gray-400">Ничего не найдено</p>
-              ) : (
-                Object.entries(filteredContent).map(([sectionKey, section]) => (
-                  <div key={sectionKey} className="mb-6">
-                    <h5 className="font-medium text-emerald-400 mb-3">{section.title}</h5>
-                    {section.content.map((item, index) => (
-                      <div key={index} className="bg-gray-700/30 rounded-lg p-4 mb-3">
-                        <h6 className="font-medium mb-2">{item.title}</h6>
-                        <div className="text-sm text-gray-300 whitespace-pre-line">
-                          {item.content.substring(0, 200)}...
-                        </div>
-                        <button
-                          onClick={() => {
-                            setActiveSection(sectionKey as any)
-                            setSearchTerm('')
-                          }}
-                          className="text-emerald-400 hover:text-emerald-300 text-sm mt-2"
-                        >
-                          Читать полностью →
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ))
-              )}
             </div>
-          ) : (
-            /* Section Content */
-            <div>
-              <h4 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                {documentationSections[activeSection].icon}
-                {documentationSections[activeSection].title}
-              </h4>
-              
-              <div className="space-y-6">
-                {documentationSections[activeSection].content.map((item, index) => (
-                  <div key={index} className="bg-gray-700/30 rounded-lg p-6">
-                    <h5 className="font-medium mb-4 text-emerald-400">{item.title}</h5>
-                    <div className="prose prose-invert max-w-none">
-                      <pre className="whitespace-pre-wrap text-sm text-gray-300 leading-relaxed">
-                        {item.content}
-                      </pre>
+            <div className="flex flex-wrap gap-2">
+              {searchHistory.map((item, index) => (
+                <button
+                  key={index}
+                  onClick={() => setSearchTerm(item.term)}
+                  className="text-xs bg-gray-600 hover:bg-gray-500 text-gray-300 px-2 py-1 rounded transition-colors"
+                >
+                  {item.term}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-col lg:flex-row gap-6">
+          {/* Sidebar */}
+          <div className="lg:w-64 flex-shrink-0">
+            <nav className="space-y-2 lg:sticky lg:top-4">
+              {Object.entries(documentationSections).map(([key, section]) => (
+                <div
+                  key={key}
+                  className="relative"
+                  onMouseEnter={() => setHoveredSection(key)}
+                  onMouseLeave={() => setHoveredSection(null)}
+                >
+                  <button
+                    onClick={() => setActiveSection(key as any)}
+                    className={`w-full text-left p-3 rounded-lg transition-all duration-200 flex items-center gap-2 ${
+                      activeSection === key
+                        ? 'bg-emerald-500/20 text-emerald-400'
+                        : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
+                    }`}
+                  >
+                    {section.icon}
+                    <span className="text-sm sm:text-base">{section.title}</span>
+                    <Eye className="w-4 h-4 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </button>
+                  
+                  {/* Tooltip */}
+                  {hoveredSection === key && (
+                    <div className="absolute left-full ml-2 top-0 z-10 bg-gray-800 text-white text-xs p-2 rounded-lg shadow-lg whitespace-nowrap animate-fadeIn">
+                      {section.preview}
                     </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+                  )}
+                </div>
+              ))}
+            </nav>
+          </div>
 
-      {/* Quick Links */}
-      <div className="mt-8 pt-6 border-t border-gray-600">
-        <h5 className="font-medium mb-4">Полезные ссылки</h5>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <a
-            href="https://t.me/support_bot"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 p-3 rounded-lg flex items-center gap-2 transition-colors"
-          >
-            <ExternalLink className="w-4 h-4" />
-            Поддержка в Telegram
-          </a>
-          <a
-            href="mailto:support@vip-club.com"
-            className="bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 p-3 rounded-lg flex items-center gap-2 transition-colors"
-          >
-            <ExternalLink className="w-4 h-4" />
-            Email поддержка
-          </a>
-          <a
-            href="https://status.vip-club.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 p-3 rounded-lg flex items-center gap-2 transition-colors"
-          >
-            <ExternalLink className="w-4 h-4" />
-            Статус системы
-          </a>
+          {/* Content */}
+          <div className="flex-1" id="documentation-content">
+            {searchTerm ? (
+              /* Search Results */
+              <div className="animate-fadeIn">
+                <h4 className="text-base sm:text-lg font-semibold mb-4">
+                  {t.searchResults} "{searchTerm}"
+                </h4>
+                {Object.keys(filteredContent).length === 0 ? (
+                  <p className="text-gray-400">{t.nothingFound}</p>
+                ) : (
+                  Object.entries(filteredContent).map(([sectionKey, section]) => (
+                    <div key={sectionKey} className="mb-6">
+                      <h5 className="font-medium text-emerald-400 mb-3">{section.title}</h5>
+                      {section.content.map((item, index) => (
+                        <div key={index} className="bg-gray-700/30 rounded-lg p-4 mb-3">
+                          <h6 className="font-medium mb-2" dangerouslySetInnerHTML={{ __html: highlightText(item.title, searchTerm) }} />
+                          <div className="text-sm text-gray-300">
+                            <div dangerouslySetInnerHTML={{ __html: highlightText(item.content.substring(0, 200) + '...', searchTerm) }} />
+                          </div>
+                          <button
+                            onClick={() => {
+                              setActiveSection(sectionKey as any)
+                              setSearchTerm('')
+                            }}
+                            className="text-emerald-400 hover:text-emerald-300 text-sm mt-2 transition-colors"
+                          >
+                            {t.readMore}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ))
+                )}
+              </div>
+            ) : (
+              /* Section Content */
+              <div className="animate-fadeIn">
+                <h4 className="text-base sm:text-lg font-semibold mb-4 flex items-center gap-2">
+                  {documentationSections[activeSection].icon}
+                  {documentationSections[activeSection].title}
+                </h4>
+                
+                <div className="space-y-6">
+                  {documentationSections[activeSection].content.map((item, index) => (
+                    <div key={index} className="bg-gray-700/30 rounded-lg p-4 sm:p-6">
+                      <h5 className="font-medium mb-4 text-emerald-400 text-sm sm:text-base">{item.title}</h5>
+                      <div className="prose prose-invert max-w-none prose-sm sm:prose-base">
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={markdownComponents}
+                          className="text-gray-300 leading-relaxed"
+                        >
+                          {item.content}
+                        </ReactMarkdown>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Quick Links */}
+        <div className="mt-8 pt-6 border-t border-gray-600">
+          <h5 className="font-medium mb-4 text-sm sm:text-base">{t.usefulLinks}</h5>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <a
+              href="https://t.me/support_bot"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 p-3 rounded-lg flex items-center gap-2 transition-all duration-200 text-sm"
+            >
+              <ExternalLink className="w-4 h-4" />
+              {t.telegramSupport}
+            </a>
+            <a
+              href="mailto:support@vip-club.com"
+              className="bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 p-3 rounded-lg flex items-center gap-2 transition-all duration-200 text-sm"
+            >
+              <ExternalLink className="w-4 h-4" />
+              {t.emailSupport}
+            </a>
+            <a
+              href="https://status.vip-club.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 p-3 rounded-lg flex items-center gap-2 transition-all duration-200 text-sm"
+            >
+              <ExternalLink className="w-4 h-4" />
+              {t.systemStatus}
+            </a>
+          </div>
+        </div>
+
+        {/* Print Styles */}
+        <style jsx>{`
+          @media print {
+            .bg-white\/5,
+            .bg-gray-700\/30,
+            .bg-gray-700,
+            .bg-gray-800 {
+              background: white !important;
+              color: black !important;
+            }
+            
+            .text-white,
+            .text-gray-300,
+            .text-gray-400,
+            .text-emerald-400 {
+              color: black !important;
+            }
+            
+            .border-white\/10,
+            .border-gray-600 {
+              border-color: #ccc !important;
+            }
+            
+            button,
+            .hover\\:bg-emerald-500\/30,
+            .hover\\:bg-blue-500\/30,
+            .hover\\:bg-yellow-500\/30 {
+              display: none !important;
+            }
+          }
+          
+          .animate-fadeIn {
+            animation: fadeIn 0.3s ease-in-out;
+          }
+          
+          @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+          }
+        `}</style>
       </div>
-    </div>
+    </>
   )
 }
