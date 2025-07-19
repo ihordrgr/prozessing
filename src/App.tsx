@@ -1,12 +1,20 @@
 import React from 'react';
-import { Crown, Star, Shield, Zap, ArrowRight, ExternalLink, Settings } from 'lucide-react';
+import { Crown, Star, Shield, Zap, ArrowRight, ExternalLink, Settings, Users, Bell } from 'lucide-react';
 import { PaymentForm } from './components/PaymentForm';
 import { VipDashboard } from './components/VipDashboard';
+import { AdminPanel } from './components/AdminPanel';
+import { NotificationSystem } from './components/NotificationSystem';
+import { SecuritySystem } from './components/SecuritySystem';
+import { SupportSystem } from './components/SupportSystem';
 
 function App() {
   const [showPaymentForm, setShowPaymentForm] = React.useState(false);
   const [showDashboard, setShowDashboard] = React.useState(false);
+  const [showAdminPanel, setShowAdminPanel] = React.useState(false);
+  const [showSecurity, setShowSecurity] = React.useState(false);
+  const [showSupport, setShowSupport] = React.useState(false);
   const [telegramId, setTelegramId] = React.useState<number | undefined>();
+  const [isAdmin, setIsAdmin] = React.useState(false);
 
   // Get Telegram ID from URL params or WebApp
   React.useEffect(() => {
@@ -21,6 +29,10 @@ function App() {
       // For development/testing purposes, you can set a test telegram ID
       // Remove this in production
       setTelegramId(123456789);
+      
+      // Check if user is admin (in production, check against database)
+      const adminIds = [123456789, 987654321]; // Add your admin telegram IDs
+      setIsAdmin(adminIds.includes(123456789));
     }
   }, []);
 
@@ -28,6 +40,14 @@ function App() {
     setShowPaymentForm(false);
     // Could redirect to access link or show success message
     window.open(accessLink, '_blank');
+  };
+
+  const resetView = () => {
+    setShowPaymentForm(false);
+    setShowDashboard(false);
+    setShowAdminPanel(false);
+    setShowSecurity(false);
+    setShowSupport(false);
   };
 
   return (
@@ -39,28 +59,76 @@ function App() {
       {/* Main Content */}
       <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-4 py-8">
         
-        {/* Navigation */}
+        {/* Navigation Bar */}
         <div className="absolute top-4 right-4 flex gap-2">
+          <NotificationSystem telegramId={telegramId} />
           {telegramId && (
+            <>
             <button
               onClick={() => {
-                setShowDashboard(!showDashboard);
-                setShowPaymentForm(false);
+                resetView();
+                setShowDashboard(true);
               }}
               className="bg-white/10 hover:bg-white/20 p-2 rounded-lg transition-colors"
               title="Личный кабинет"
             >
               <Settings className="w-5 h-5" />
             </button>
+            <button
+              onClick={() => {
+                resetView();
+                setShowSecurity(true);
+              }}
+              className="bg-white/10 hover:bg-white/20 p-2 rounded-lg transition-colors"
+              title="Безопасность"
+            >
+              <Shield className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => {
+                resetView();
+                setShowSupport(true);
+              }}
+              className="bg-white/10 hover:bg-white/20 p-2 rounded-lg transition-colors"
+              title="Поддержка"
+            >
+              <Bell className="w-5 h-5" />
+            </button>
+            {isAdmin && (
+              <button
+                onClick={() => {
+                  resetView();
+                  setShowAdminPanel(true);
+                }}
+                className="bg-emerald-500/20 hover:bg-emerald-500/30 p-2 rounded-lg transition-colors"
+                title="Админ-панель"
+              >
+                <Users className="w-5 h-5" />
+              </button>
+            )}
+            </>
           )}
         </div>
 
-        {/* Show Dashboard if requested */}
-        {showDashboard && telegramId ? (
+        {/* Admin Panel */}
+        {showAdminPanel && isAdmin ? (
+          <div className="w-full max-w-7xl">
+            <div className="mb-6 text-center">
+              <button
+                onClick={resetView}
+                className="text-emerald-400 hover:text-emerald-300 mb-4"
+              >
+                ← Вернуться на главную
+              </button>
+            </div>
+            <AdminPanel />
+          </div>
+        ) : showDashboard && telegramId ? (
+          /* User Dashboard */
           <div className="w-full max-w-6xl">
             <div className="mb-6 text-center">
               <button
-                onClick={() => setShowDashboard(false)}
+                onClick={resetView}
                 className="text-emerald-400 hover:text-emerald-300 mb-4"
               >
                 ← Вернуться на главную
@@ -69,12 +137,40 @@ function App() {
             </div>
             <VipDashboard telegramId={telegramId} />
           </div>
+        ) : showSecurity && telegramId ? (
+          /* Security System */
+          <div className="w-full max-w-4xl">
+            <div className="mb-6 text-center">
+              <button
+                onClick={resetView}
+                className="text-emerald-400 hover:text-emerald-300 mb-4"
+              >
+                ← Вернуться на главную
+              </button>
+              <h1 className="text-3xl font-bold">Безопасность</h1>
+            </div>
+            <SecuritySystem telegramId={telegramId} />
+          </div>
+        ) : showSupport && telegramId ? (
+          /* Support System */
+          <div className="w-full max-w-4xl">
+            <div className="mb-6 text-center">
+              <button
+                onClick={resetView}
+                className="text-emerald-400 hover:text-emerald-300 mb-4"
+              >
+                ← Вернуться на главную
+              </button>
+              <h1 className="text-3xl font-bold">Поддержка</h1>
+            </div>
+            <SupportSystem telegramId={telegramId} />
+          </div>
         ) : showPaymentForm ? (
           /* Payment Form */
           <div className="w-full max-w-2xl">
             <div className="mb-6 text-center">
               <button
-                onClick={() => setShowPaymentForm(false)}
+                onClick={resetView}
                 className="text-emerald-400 hover:text-emerald-300 mb-4"
               >
                 ← Вернуться на главную
@@ -157,7 +253,10 @@ function App() {
             
             {/* Payment Button */}
             <button 
-              onClick={() => setShowPaymentForm(true)}
+              onClick={() => {
+                resetView();
+                setShowPaymentForm(true);
+              }}
               className="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-black font-bold py-4 px-8 rounded-2xl text-lg md:text-xl transition-all duration-300 transform hover:scale-105 hover:shadow-lg hover:shadow-emerald-500/25 flex items-center justify-center gap-3 group"
             >
                 <span>💳</span>
