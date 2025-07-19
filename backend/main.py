@@ -1,196 +1,250 @@
 import asyncio
-import os
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.client.default import DefaultBotProperties
-from aiogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
-from aiogram.enums import ParseMode
-from aiogram.filters import CommandStart
 import logging
-from supabase_integration import supabase_client
+from datetime import datetime, timedelta
+import os
+import re
+from typing import Optional, Dict, Any
+
+from aiogram import Bot, Dispatcher, types
+from aiogram.filters import Command
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.storage.memory import MemoryStorage
+
+from supabase_client import SupabaseClient
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Initialize bot and dispatcher
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-if not BOT_TOKEN:
-    raise ValueError("BOT_TOKEN environment variable is required")
+bot = Bot(token=BOT_TOKEN)
+storage = MemoryStorage()
+dp = Dispatcher(storage=storage)
 
-bot = Bot(
-    token=BOT_TOKEN,
-    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
-)
-dp = Dispatcher()
+# Initialize Supabase client
+supabase_client = SupabaseClient()
 
+# FSM States
+class PaymentStates(StatesGroup):
+    waiting_for_screenshot = State()
 
-@dp.message(CommandStart())
-async def cmd_start(message: Message):
+# Utility functions
+def generate_access_link(payment_id: str, user_id: int) -> str:
+    """Generate unique access link for VIP chat"""
+    import secrets
+    token = secrets.token_urlsafe(32)
+    # In real implementation, save this token to database
+    return f"https://t.me/+{token}"
+
+def is_payment_expired(created_at: str, hours_limit: int = 24) -> bool:
+    """Check if payment is expired"""
+    try:
+        created_time = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+        expiry_time = created_time + timedelta(hours=hours_limit)
+        return datetime.now() > expiry_time
+    except Exception as e:
+        logger.error(f"Error checking payment expiry: {e}")
+        return True
+
+def validate_screenshot_text(text: str) -> Dict[str, Any]:
+    """Basic validation of screenshot text for payment confirmation"""
+    validation_result = {
+        "is_valid": False,
+        "found_amount": False,
+        "found_success": False,
+        "found_date": False,
+        "confidence": 0
+    }
+    
+    if not text:
+        return validation_result
+    
+    text_lower = text.lower()
+    
+    # Check for amount (500 rubles)
+    amount_patterns = [r'500', r'пятьсот', r'five hundred']
+    for pattern in amount_patterns:
+        if re.search(pattern, text_lower):
+            validation_result["found_amount"] = True
+            break
+    
+    # Check for success status
+    success_patterns = [r'успешно', r'выполнено', r'завершено', r'success', r'completed', r'paid']
+    for pattern in success_patterns:
+        if re.search(pattern, text_lower):
+            validation_result["found_success"] = True
+            break
+    
+    # Check for recent date (simple check)
+    date_patterns = [r'\d{1,2}[./]\d{1,2}[./]\d{2,4}', r'\d{1,2}:\d{2}']
+    for pattern in date_patterns:
+        if re.search(pattern, text):
+            validation_result["found_date"] = True
+            break
+    
+    # Calculate confidence
+    confidence = 0
+    if validation_result["found_amount"]:
+        confidence += 40
+    if validation_result["found_success"]:
+        confidence += 40
+    if validation_result["found_date"]:
+        confidence += 20
+    
+    validation_result["confidence"] = confidence
+    validation_result["is_valid"] = confidence >= 60
+    
+    return validation_result
+
+async def process_screenshot_automatically(screenshot_url: str, payment_id: str) -> Dict[str, Any]:
+    """Process screenshot automatically using OCR or AI"""
+    try:
+        # Here you would implement actual OCR/AI processing
+        # For now, we'll simulate the process
+        
+        # Placeholder for OCR text extraction
+        extracted_text = "Платеж выполнен успешно 500 рублей 15:30 25.12.2024"
+        
+        validation = validate_screenshot_text(extracted_text)
+        
+        result = {
+            "success": validation["is_valid"],
+            "confidence": validation["confidence"],
+            "extracted_text": extracted_text,
+            "validation_details": validation
+        }
+        
+        # Update payment status based on validation
+        if validation["is_valid"]:
+            await supabase_client.update_payment_status(
+                payment_id=payment_id,
+                status="auto_verified",
+                verification_details=result
+            )
+        else:
+            await supabase_client.update_payment_status(
+                payment_id=payment_id,
+                status="needs_manual_review",
+                verification_details=result
+            )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error processing screenshot automatically: {e}")
+        return {"success": False, "error": str(e)}
+
+async def notify_moderators(payment_id: str, user_id: int, screenshot_url: str):
+    """Notify moderators about new payment for manual review"""
+    try:
+        # Get moderator chat IDs from environment or database
+        moderator_chat_ids = os.getenv("MODERATOR_CHAT_IDS", "").split(",")
+        
+        if not moderator_chat_ids or moderator_chat_ids == [""]:
+            logger.warning("No moderator chat IDs configured")
+            return
+        
+        message_text = (
+            f"🔔 <b>Новый платеж на проверку</b>\n\n"
+            f"🆔 <b>Payment ID:</b> <code>{payment_id}</code>\n"
+            f"👤 <b>User ID:</b> <code>{user_id}</code>\n\n"
+            f"📸 <b>Скриншот:</b> {screenshot_url}\n\n"
+            f"⏰ <b>Время:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+        )
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"mod_approve:{payment_id}"),
+                InlineKeyboardButton(text="❌ Отклонить", callback_data=f"mod_reject:{payment_id}")
+            ],
+            [InlineKeyboardButton(text="📝 Детали", callback_data=f"mod_details:{payment_id}")]
+        ])
+        
+        for chat_id in moderator_chat_ids:
+            if chat_id.strip():
+                try:
+                    await bot.send_message(
+                        chat_id=int(chat_id.strip()),
+                        text=message_text,
+                        reply_markup=keyboard
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to notify moderator {chat_id}: {e}")
+                    
+    except Exception as e:
+        logger.error(f"Error notifying moderators: {e}")
+
+# Bot handlers
+@dp.message(Command("start"))
+async def start_handler(message: types.Message):
     """Handle /start command"""
     user = message.from_user
     
-    # Create or update user profile in Supabase
-    try:
-        await supabase_client.create_or_update_profile(
-            telegram_id=user.id,
-            user_data={
-                "username": user.username,
-                "full_name": user.full_name
-            }
-        )
-        
-        # Log user start action
-        await supabase_client.log_user_action(
-            telegram_id=user.id,
-            action="bot_started",
-            details={"username": user.username}
-        )
-    except Exception as e:
-        logger.error(f"Error updating user profile: {e}")
-    
-    # Check if user already has VIP access
-    try:
-        access_status = await supabase_client.check_vip_access(user.id)
-        if access_status.get("has_access"):
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🎯 Войти в VIP чат", url="https://t.me/your_vip_chat")],
-                [InlineKeyboardButton(text="📊 Мой профиль", callback_data="profile")]
-            ])
-            
-            welcome_text = (
-                f"🎉 <b>Добро пожаловать, {user.first_name}!</b>\n\n"
-                "✅ У вас уже есть VIP доступ!\n\n"
-                f"📅 Действует до: {access_status.get('expires_at', 'неизвестно')}\n\n"
-                "Используйте кнопки ниже:"
-            )
-            
-            await message.answer(welcome_text, reply_markup=keyboard)
-            return
-    except Exception as e:
-        logger.error(f"Error checking VIP access: {e}")
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💳 Оплатить доступ", callback_data="pay")],
-        [InlineKeyboardButton(text="📋 Инструкция", callback_data="instructions")],
-        [InlineKeyboardButton(text="📊 Мой профиль", callback_data="profile")]
-    ])
+    # Log user action
+    await supabase_client.log_user_action(
+        telegram_id=user.id,
+        action="bot_start",
+        details={"username": user.username, "first_name": user.first_name}
+    )
     
     welcome_text = (
-        f"🔥 <b>Добро пожаловать в VIP Клуб, {user.first_name}!</b>\n\n"
-        "Для получения доступа к эксклюзивным материалам "
-        "необходимо произвести оплату.\n\n"
-        "💎 <b>Что вы получите:</b>\n"
-        "• Доступ к закрытому VIP чату\n"
+        f"👋 Привет, {user.first_name}!\n\n"
+        "🎯 Добро пожаловать в VIP бот!\n\n"
+        "💎 Получите доступ к эксклюзивному контенту всего за 500 рублей.\n\n"
+        "🔥 Что вас ждет:\n"
+        "• Закрытый VIP чат\n"
         "• Эксклюзивные материалы\n"
-        "• Приоритетная поддержка\n"
-        "• Особые привилегии\n\n"
-        "Нажмите кнопку ниже для оплаты:"
+        "• Прямое общение с экспертами\n"
+        "• Приоритетная поддержка\n\n"
+        "💳 Готовы присоединиться?"
     )
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💳 Оплатить доступ (500₽)", callback_data="pay")],
+        [InlineKeyboardButton(text="ℹ️ Подробнее", callback_data="info")]
+    ])
     
     await message.answer(welcome_text, reply_markup=keyboard)
 
-
-@dp.callback_query(F.data == "profile")
-async def show_profile(callback_query: types.CallbackQuery):
-    """Show user profile information"""
+@dp.callback_query(lambda c: c.data == "pay")
+async def handle_payment(callback_query: CallbackQuery):
+    """Handle payment initiation"""
     user = callback_query.from_user
     
     try:
-        # Get user profile
-        profile = await supabase_client.get_user_profile(user.id)
-        payments = await supabase_client.get_user_payments(user.id)
-        access_status = await supabase_client.check_vip_access(user.id)
+        # Create payment record
+        payment_data = await supabase_client.create_payment(
+            telegram_id=user.id,
+            amount=500,
+            currency="RUB"
+        )
         
-        profile_text = f"👤 <b>Профиль пользователя</b>\n\n"
-        profile_text += f"🆔 ID: {user.id}\n"
-        profile_text += f"👤 Имя: {user.full_name or user.first_name}\n"
+        payment_id = payment_data.get("payment_id")
         
-        if user.username:
-            profile_text += f"📝 Username: @{user.username}\n"
-        
-        profile_text += f"\n💎 <b>VIP Статус:</b> "
-        if access_status.get("has_access"):
-            profile_text += f"✅ Активен\n"
-            profile_text += f"📅 До: {access_status.get('expires_at', 'неизвестно')}\n"
-        else:
-            profile_text += f"❌ Неактивен\n"
-            profile_text += f"❓ Причина: {access_status.get('reason', 'Нет доступа')}\n"
-        
-        profile_text += f"\n💳 <b>Платежей:</b> {len(payments)}\n"
-        
-        if payments:
-            verified_payments = [p for p in payments if p.get('status') == 'verified']
-            profile_text += f"✅ Подтверждено: {len(verified_payments)}\n"
+        payment_text = (
+            "💳 <b>Оплата VIP доступа</b>\n\n"
+            "💰 <b>Сумма:</b> 500 рублей\n"
+            f"🆔 <b>ID платежа:</b> <code>{payment_id}</code>\n\n"
+            "📱 <b>Способы оплаты:</b>\n"
+            "• СберБанк: <code>+7 (XXX) XXX-XX-XX</code>\n"
+            "• Тинькофф: <code>+7 (XXX) XXX-XX-XX</code>\n"
+            "• ЮMoney: <code>XXXXXXXXXXXXXX</code>\n\n"
+            "📸 <b>После оплаты:</b>\n"
+            "1. Сделайте скриншот подтверждения\n"
+            "2. Нажмите 'Я оплатил'\n"
+            "3. Отправьте скриншот в чат\n\n"
+            "⏰ <b>Время на оплату:</b> 24 часа"
+        )
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💳 Оплатить доступ", callback_data="pay")],
+            [InlineKeyboardButton(text="✅ Я оплатил", callback_data=f"payment_done:{payment_id}")],
             [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
         ])
         
-        await callback_query.message.edit_text(profile_text, reply_markup=keyboard)
-        
-    except Exception as e:
-        logger.error(f"Error showing profile: {e}")
-        await callback_query.message.edit_text(
-            "❌ Ошибка при загрузке профиля. Попробуйте позже.",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
-            ])
-        )
-
-
-@dp.callback_query(F.data == "instructions")
-async def show_instructions(callback_query: types.CallbackQuery):
-    """Show payment instructions"""
-    instructions_text = (
-        "📋 <b>Инструкция по оплате:</b>\n\n"
-        "1️⃣ Нажмите кнопку 'Оплатить доступ'\n"
-        "2️⃣ Произведите оплату любым удобным способом\n"
-        "3️⃣ Сделайте скриншот подтверждения оплаты\n"
-        "4️⃣ Отправьте скриншот в этот бот\n"
-        "5️⃣ Получите мгновенный доступ к VIP разделу\n\n"
-        "💡 <b>Важно:</b> Доступ предоставляется в течение 5 минут после подтверждения оплаты."
-    )
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💳 Оплатить доступ", callback_data="pay")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
-    ])
-    
-    await callback_query.message.edit_text(instructions_text, reply_markup=keyboard)
-
-
-@dp.callback_query(F.data == "back_to_start")
-async def back_to_start(callback_query: types.CallbackQuery):
-    """Return to start menu"""
-    # Create a fake message object to reuse cmd_start
-    fake_message = callback_query.message
-    fake_message.from_user = callback_query.from_user
-    await cmd_start(fake_message)
-
-
-@dp.callback_query(F.data == "pay")
-async def process_payment(callback_query: types.CallbackQuery):
-    """Handle payment process"""
-    user = callback_query.from_user
-    
-    try:
-        # Create payment record in Supabase
-        payment = await supabase_client.create_payment(
-            telegram_id=user.id,
-            amount=500.0,
-            payment_method="telegram_bot"
-        )
-        
-        # Store payment ID in user session (you might want to use Redis for this)
-        # For now, we'll include it in callback data
-        payment_id = payment.get('id')
-        
-        # Log payment initiation
-        await supabase_client.log_user_action(
-            telegram_id=user.id,
-            action="payment_initiated",
-            details={"payment_id": payment_id, "amount": 500}
-        )
+        await callback_query.message.edit_text(payment_text, reply_markup=keyboard)
         
     except Exception as e:
         logger.error(f"Error creating payment: {e}")
@@ -200,178 +254,407 @@ async def process_payment(callback_query: types.CallbackQuery):
                 [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
             ])
         )
-        return
-    
-    payment_text = (
-        "💳 <b>Оплата доступа</b>\n\n"
-        "Стоимость VIP доступа: <b>500 рублей</b>\n\n"
-        "💰 <b>Способы оплаты:</b>\n"
-        "• Банковская карта\n"
-        "• СБП (Система быстрых платежей)\n"
-        "• Криптовалюта\n"
-        "• Электронные кошельки\n\n"
-        "После оплаты отправьте скриншот в этот бот для подтверждения.\n\n"
-        f"🆔 <b>ID платежа:</b> <code>{payment_id}</code>"
-    )
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Я оплатил", callback_data=f"payment_done:{payment_id}")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
-    ])
-    
-    await callback_query.message.edit_text(payment_text, reply_markup=keyboard)
 
-
-@dp.callback_query(F.data.startswith("payment_done:"))
-async def payment_confirmation(callback_query: types.CallbackQuery):
-    """Handle payment confirmation"""
+@dp.callback_query(lambda c: c.data.startswith("payment_done:"))
+async def handle_payment_verification(callback_query: CallbackQuery):
+    """Handle payment verification"""
     user = callback_query.from_user
-    payment_id = callback_query.data.split(":")[1] if ":" in callback_query.data else None
-    
-    await callback_query.message.edit_text(
-        "⏳ <b>Проверяем оплату...</b>\n\nПодождите несколько секунд..."
-    )
-    
-    # Simulate payment verification delay
-    await asyncio.sleep(3)
+    payment_id = callback_query.data.split(":")[1]
     
     try:
         if payment_id:
-            # Verify payment using Supabase
-            result = await supabase_client.verify_payment(payment_id, verified=True)
+            # Check payment status first
+            payment_status = await supabase_client.get_payment_status(payment_id)
             
-            if result.get("success"):
-                access_link = result.get("access_link")
-                expires_at = result.get("expires_at")
+            if not payment_status:
+                await callback_query.message.edit_text(
+                    "❌ <b>Платеж не найден</b>\n\n"
+                    "Возможно, платеж был удален или ID неверный.",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+                    ])
+                )
+                return
+            
+            current_status = payment_status.get('status')
+            
+            # Check if payment is expired
+            if is_payment_expired(payment_status.get('created_at', '')):
+                await supabase_client.update_payment_status(payment_id, 'expired')
+                current_status = 'expired'
+            
+            # Handle different payment statuses
+            if current_status == 'verified' or current_status == 'auto_verified':
+                # Payment already verified
+                access_link = payment_status.get('access_link')
+                if not access_link:
+                    # Generate new access link
+                    access_link = generate_access_link(payment_id, user.id)
+                    expires_at = (datetime.now() + timedelta(days=30)).isoformat()
+                    
+                    await supabase_client.update_payment_status(
+                        payment_id=payment_id,
+                        status='verified',
+                        access_link=access_link,
+                        expires_at=expires_at
+                    )
+                else:
+                    expires_at = payment_status.get('expires_at')
                 
                 success_text = (
-                    "✅ <b>Оплата подтверждена!</b>\n\n"
+                    "✅ <b>Оплата уже подтверждена!</b>\n\n"
+                    "🎉 У вас есть VIP доступ.\n\n"
+                    f"🔗 <b>Ваша ссылка для входа:</b>\n{access_link}\n\n"
+                    f"📅 <b>Действует до:</b> {expires_at}\n\n"
+                    "💎 Добро пожаловать в VIP клуб!"
+                )
+                
+                keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🎯 Войти в VIP чат", url=access_link)],
+                    [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+                ])
+                
+                await callback_query.message.edit_text(success_text, reply_markup=keyboard)
+                return
+            
+            elif current_status == 'rejected':
+                # Payment was rejected
+                rejection_reason = payment_status.get('rejection_reason', 'Неизвестная причина')
+                
+                await callback_query.message.edit_text(
+                    f"❌ <b>Платеж отклонен</b>\n\n"
+                    f"📝 <b>Причина:</b> {rejection_reason}\n\n"
+                    "Пожалуйста, попробуйте оплатить снова или обратитесь в поддержку.",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="💳 Новый платеж", callback_data="pay")],
+                        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+                    ])
+                )
+                return
+            
+            elif current_status == 'pending':
+                # Check if screenshot was uploaded
+                if payment_status.get('screenshot_url'):
+                    await callback_query.message.edit_text(
+                        "⏳ <b>Платеж на проверке</b>\n\n"
+                        "📸 Скриншот получен и передан на проверку модераторам.\n\n"
+                        "⏰ Обычно проверка занимает до 30 минут.\n\n"
+                        "Мы уведомим вас о результате.",
+                        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                            [InlineKeyboardButton(text="🔄 Проверить снова", callback_data=f"payment_done:{payment_id}")],
+                            [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+                        ])
+                    )
+                else:
+                    # Request screenshot
+                    await callback_query.message.edit_text(
+                        "📸 <b>Нужен скриншот оплаты</b>\n\n"
+                        "Пожалуйста, отправьте скриншот подтверждения оплаты в этот чат.\n\n"
+                        "💡 Скриншот должен содержать:\n"
+                        "• Сумму платежа (500 рублей)\n"
+                        "• Дату и время\n"
+                        "• Статус 'Успешно' или 'Выполнено'",
+                        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                            [InlineKeyboardButton(text="🔄 Проверить снова", callback_data=f"payment_done:{payment_id}")],
+                            [InlineKeyboardButton(text="🔙 Назад", callback_data="pay")]
+                        ])
+                    )
+                    
+                    # Set state to wait for screenshot
+                    from aiogram.fsm.context import FSMContext
+                    state = FSMContext(storage=storage, key=types.StorageKey(bot_id=bot.id, chat_id=callback_query.message.chat.id, user_id=user.id))
+                    await state.set_state(PaymentStates.waiting_for_screenshot)
+                    await state.update_data(payment_id=payment_id)
+                return
+            
+            elif current_status == 'expired':
+                await callback_query.message.edit_text(
+                    "⏰ <b>Платеж истек</b>\n\n"
+                    "Время на оплату истекло. Пожалуйста, создайте новый платеж.",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="💳 Новый платеж", callback_data="pay")],
+                        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+                    ])
+                )
+                return
+            
+            else:
+                # Unknown status
+                await callback_query.message.edit_text(
+                    f"❓ <b>Неизвестный статус платежа:</b> {current_status}\n\n"
+                    "Обратитесь в поддержку для решения проблемы.",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+                    ])
+                )
+                
+    except Exception as e:
+        logger.error(f"Error verifying payment: {e}")
+        await callback_query.message.edit_text(
+            "❌ <b>Ошибка при проверке платежа</b>\n\n"
+            "Произошла техническая ошибка. Попробуйте позже или обратитесь в поддержку.\n\n"
+            f"🆔 <b>ID платежа:</b> <code>{payment_id}</code>",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔄 Попробовать снова", callback_data=f"payment_done:{payment_id}")],
+                [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+            ])
+        )
+
+@dp.message(PaymentStates.waiting_for_screenshot)
+async def handle_screenshot_upload(message: types.Message, state: FSMContext):
+    """Handle screenshot upload from user"""
+    try:
+        data = await state.get_data()
+        payment_id = data.get('payment_id')
+        
+        if not payment_id:
+            await message.answer("❌ Ошибка: ID платежа не найден. Начните процесс заново.")
+            await state.clear()
+            return
+        
+        if message.photo:
+            # Get the largest photo
+            photo = message.photo[-1]
+            
+            # Download photo
+            file_info = await bot.get_file(photo.file_id)
+            file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_info.file_path}"
+            
+            # Save screenshot URL to database
+            await supabase_client.update_payment_screenshot(payment_id, file_url)
+            
+            # Try automatic processing first
+            auto_result = await process_screenshot_automatically(file_url, payment_id)
+            
+            if auto_result.get("success") and auto_result.get("confidence", 0) >= 80:
+                # High confidence - auto approve
+                access_link = generate_access_link(payment_id, message.from_user.id)
+                expires_at = (datetime.now() + timedelta(days=30)).isoformat()
+                
+                await supabase_client.update_payment_status(
+                    payment_id=payment_id,
+                    status='verified',
+                    access_link=access_link,
+                    expires_at=expires_at
+                )
+                
+                success_text = (
+                    "✅ <b>Оплата автоматически подтверждена!</b>\n\n"
                     "🎉 Поздравляем! Вы получили VIP доступ.\n\n"
                     f"🔗 <b>Ваша ссылка для входа:</b>\n{access_link}\n\n"
                     f"📅 <b>Действует до:</b> {expires_at}\n\n"
                     "💎 Добро пожаловать в VIP клуб!"
                 )
-                await callback_query.message.edit_text(success_text)
+                
+                keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🎯 Войти в VIP чат", url=access_link)],
+                    [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+                ])
+                
+                await message.answer(success_text, reply_markup=keyboard)
                 
                 # Log successful verification
                 await supabase_client.log_user_action(
-                    telegram_id=user.id,
-                    action="payment_verified",
-                    details={"payment_id": payment_id, "access_link": access_link}
+                    telegram_id=message.from_user.id,
+                    action="payment_auto_verified",
+                    details={"payment_id": payment_id, "confidence": auto_result.get("confidence")}
                 )
-                return
-        
-        # If we get here, payment verification failed
-        error_text = (
-            "❌ <b>Оплата не найдена</b>\n\n"
-            "Пожалуйста, отправьте скриншот оплаты или "
-            "обратитесь в поддержку."
-        )
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔄 Проверить снова", callback_data=f"payment_done:{payment_id}")],
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="pay")]
-        ])
-        await callback_query.message.edit_text(error_text, reply_markup=keyboard)
-        
+                
+            else:
+                # Low confidence or failed - send to manual review
+                await supabase_client.update_payment_status(payment_id, 'needs_manual_review')
+                
+                await message.answer(
+                    "📸 <b>Скриншот получен!</b>\n\n"
+                    "⏳ Ваш платеж отправлен на проверку модераторам.\n\n"
+                    "⏰ Обычно проверка занимает до 30 минут.\n\n"
+                    "Мы уведомим вас о результате.",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="🔄 Проверить статус", callback_data=f"payment_done:{payment_id}")],
+                        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+                    ])
+                )
+                
+                # Notify moderators
+                await notify_moderators(payment_id, message.from_user.id, file_url)
+            
+            await state.clear()
+            
+        else:
+            await message.answer(
+                "❌ Пожалуйста, отправьте изображение (скриншот) подтверждения оплаты.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🔙 Отмена", callback_data="back_to_start")]
+                ])
+            )
+            
     except Exception as e:
-        logger.error(f"Error verifying payment: {e}")
-        await callback_query.message.edit_text(
-            "❌ Ошибка при проверке платежа. Попробуйте позже.",
+        logger.error(f"Error handling screenshot upload: {e}")
+        await message.answer(
+            "❌ Ошибка при обработке скриншота. Попробуйте еще раз.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
             ])
         )
+        await state.clear()
 
-
-@dp.message(F.photo)
-async def handle_payment_screenshot(message: Message):
-    """Handle payment screenshot uploads"""
-    user = message.from_user
-    
-    await message.answer(
-        "📸 <b>Скриншот получен!</b>\n\n"
-        "Проверяем вашу оплату... Это займет несколько минут."
-    )
+# Moderator handlers
+@dp.callback_query(lambda c: c.data.startswith("mod_approve:"))
+async def handle_moderator_approve(callback_query: CallbackQuery):
+    """Handle moderator approval"""
+    payment_id = callback_query.data.split(":")[1]
     
     try:
-        # Get the largest photo
-        photo = message.photo[-1]
+        # Get payment info
+        payment_info = await supabase_client.get_payment_status(payment_id)
+        if not payment_info:
+            await callback_query.answer("❌ Платеж не найден")
+            return
         
-        # Download photo
-        file_info = await bot.get_file(photo.file_id)
-        file_data = await bot.download_file(file_info.file_path)
+        user_id = payment_info.get('telegram_id')
         
-        # Upload to Supabase Storage
-        file_path = f"screenshots/{user.id}_{photo.file_id}.jpg"
-        screenshot_url = await supabase_client.upload_file_to_storage(
-            bucket="payment-screenshots",
-            file_path=file_path,
-            file_data=file_data.read()
+        # Generate access link
+        access_link = generate_access_link(payment_id, user_id)
+        expires_at = (datetime.now() + timedelta(days=30)).isoformat()
+        
+        # Update payment status
+        await supabase_client.update_payment_status(
+            payment_id=payment_id,
+            status='verified',
+            access_link=access_link,
+            expires_at=expires_at
         )
         
-        # Find the most recent pending payment for this user
-        payments = await supabase_client.get_user_payments(user.id)
-        pending_payment = next((p for p in payments if p.get('status') == 'pending'), None)
+        # Notify user
+        success_text = (
+            "✅ <b>Оплата подтверждена!</b>\n\n"
+            "🎉 Поздравляем! Вы получили VIP доступ.\n\n"
+            f"🔗 <b>Ваша ссылка для входа:</b>\n{access_link}\n\n"
+            f"📅 <b>Действует до:</b> {expires_at}\n\n"
+            "💎 Добро пожаловать в VIP клуб!"
+        )
         
-        if pending_payment:
-            # Update payment with screenshot
-            await supabase_client.update_payment_screenshot(
-                payment_id=pending_payment['id'],
-                screenshot_url=screenshot_url
-            )
-            
-            # Log screenshot upload
-            await supabase_client.log_user_action(
-                telegram_id=user.id,
-                action="screenshot_uploaded",
-                details={
-                    "payment_id": pending_payment['id'],
-                    "screenshot_url": screenshot_url
-                }
-            )
-            
-            # Simulate verification process (in real app, this would be manual or AI-based)
-            await asyncio.sleep(2)
-            
-            # Auto-verify for demo (in production, this would be manual review)
-            result = await supabase_client.verify_payment(pending_payment['id'], verified=True)
-            
-            if result.get("success"):
-                access_link = result.get("access_link")
-                await message.answer(
-                    "✅ <b>Оплата подтверждена!</b>\n\n"
-                    f"🔗 <b>Ваша ссылка:</b>\n{access_link}\n\n"
-                    "💎 Добро пожаловать в VIP клуб!"
-                )
-            else:
-                await message.answer(
-                    "❌ <b>Не удалось подтвердить оплату</b>\n\n"
-                    "Скриншот сохранен. Наши модераторы проверят его в ближайшее время."
-                )
-        else:
-            await message.answer(
-                "❌ <b>Платеж не найден</b>\n\n"
-                "Сначала нажмите кнопку 'Оплатить доступ' в меню."
-            )
-            
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🎯 Войти в VIP чат", url=access_link)]
+        ])
+        
+        await bot.send_message(user_id, success_text, reply_markup=keyboard)
+        
+        # Update moderator message
+        await callback_query.message.edit_text(
+            f"✅ <b>Платеж {payment_id} подтвержден</b>\n\n"
+            f"👤 Пользователь {user_id} получил доступ.\n"
+            f"⏰ {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+        )
+        
+        await callback_query.answer("✅ Платеж подтвержден")
+        
     except Exception as e:
-        logger.error(f"Error processing screenshot: {e}")
-        await message.answer(
-            "❌ <b>Ошибка при обработке скриншота</b>\n\n"
-            "Попробуйте отправить скриншот еще раз или обратитесь в поддержку."
-        )
+        logger.error(f"Error approving payment: {e}")
+        await callback_query.answer("❌ Ошибка при подтверждении")
 
+@dp.callback_query(lambda c: c.data.startswith("mod_reject:"))
+async def handle_moderator_reject(callback_query: CallbackQuery):
+    """Handle moderator rejection"""
+    payment_id = callback_query.data.split(":")[1]
+    
+    try:
+        # Get payment info
+        payment_info = await supabase_client.get_payment_status(payment_id)
+        if not payment_info:
+            await callback_query.answer("❌ Платеж не найден")
+            return
+        
+        user_id = payment_info.get('telegram_id')
+        
+        # Update payment status
+        await supabase_client.update_payment_status(
+            payment_id=payment_id,
+            status='rejected',
+            rejection_reason='Скриншот не прошел проверку'
+        )
+        
+        # Notify user
+        await bot.send_message(
+            user_id,
+            "❌ <b>Платеж отклонен</b>\n\n"
+            "📝 <b>Причина:</b> Скриншот не прошел проверку\n\n"
+            "Пожалуйста, попробуйте оплатить снова или обратитесь в поддержку.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="💳 Новый платеж", callback_data="pay")]
+            ])
+        )
+        
+        # Update moderator message
+        await callback_query.message.edit_text(
+            f"❌ <b>Платеж {payment_id} отклонен</b>\n\n"
+            f"👤 Пользователь {user_id} уведомлен.\n"
+            f"⏰ {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+        )
+        
+        await callback_query.answer("❌ Платеж отклонен")
+        
+    except Exception as e:
+        logger.error(f"Error rejecting payment: {e}")
+        await callback_query.answer("❌ Ошибка при отклонении")
+
+@dp.callback_query(lambda c: c.data == "back_to_start")
+async def handle_back_to_start(callback_query: CallbackQuery):
+    """Handle back to start"""
+    user = callback_query.from_user
+    
+    welcome_text = (
+        f"👋 Привет, {user.first_name}!\n\n"
+        "🎯 Добро пожаловать в VIP бот!\n\n"
+        "💎 Получите доступ к эксклюзивному контенту всего за 500 рублей.\n\n"
+        "🔥 Что вас ждет:\n"
+        "• Закрытый VIP чат\n"
+        "• Эксклюзивные материалы\n"
+        "• Прямое общение с экспертами\n"
+        "• Приоритетная поддержка\n\n"
+        "💳 Готовы присоединиться?"
+    )
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💳 Оплатить доступ (500₽)", callback_data="pay")],
+        [InlineKeyboardButton(text="ℹ️ Подробнее", callback_data="info")]
+    ])
+    
+    await callback_query.message.edit_text(welcome_text, reply_markup=keyboard)
+
+@dp.callback_query(lambda c: c.data == "info")
+async def handle_info(callback_query: CallbackQuery):
+    """Handle info request"""
+    info_text = (
+        "ℹ️ <b>Подробная информация</b>\n\n"
+        "💎 <b>VIP доступ включает:</b>\n"
+        "• Закрытый Telegram чат с экспертами\n"
+        "• Эксклюзивные материалы и гайды\n"
+        "• Ежедневные аналитические обзоры\n"
+        "• Приоритетная техническая поддержка\n"
+        "• Доступ к архиву материалов\n\n"
+        "💰 <b>Стоимость:</b> 500 рублей\n"
+        "⏰ <b>Срок действия:</b> 30 дней\n"
+        "🔄 <b>Продление:</b> автоматическое\n\n"
+        "📞 <b>Поддержка:</b> @support_username"
+    )
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💳 Оплатить доступ", callback_data="pay")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+    ])
+    
+    await callback_query.message.edit_text(info_text, reply_markup=keyboard)
 
 async def main():
     """Main function to start the bot"""
-    logger.info("Starting VIP Access Bot with Supabase integration...")
     try:
+        logger.info("Starting bot...")
         await dp.start_polling(bot)
     except Exception as e:
         logger.error(f"Error starting bot: {e}")
     finally:
         await bot.session.close()
-
 
 if __name__ == "__main__":
     asyncio.run(main())
